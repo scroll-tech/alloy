@@ -56,7 +56,6 @@ where
 /// A future for [`RpcWithBlock`]. Simple wrapper around [`RpcCall`].
 #[derive(Debug, Clone)]
 #[pin_project::pin_project]
-#[allow(unnameable_types)]
 pub struct RpcWithBlockFut<T, Params, Resp, Output, Map>
 where
     T: Transport + Clone,
