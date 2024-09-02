@@ -149,3 +149,7 @@ assert_matches = "1.5"
 serial_test = "3.0"
 similar-asserts = "1.5"
 tempfile = "3.10"
+
+[patch.crates-io]
+alloy-eip2930 = { git = "https://github.com/scroll-tech/alloy-eips", branch = "rustc-1.75" }
+alloy-eip7702 = { git = "https://github.com/scroll-tech/alloy-eips", branch = "rustc-1.75" }
