@@ -61,6 +61,7 @@ serde_json.workspace = true
 default = ["std", "kzg-sidecar"]
 std = ["alloy-primitives/std", "alloy-rlp/std",
 "serde?/std", "c-kzg?/std", "once_cell?/std"]
+rkyv = ["alloy-primitives/rkyv", "alloy-eip2930/serde"]
 serde = ["dep:alloy-serde", "dep:serde", "alloy-primitives/serde", 
 "c-kzg?/serde", "alloy-eip2930/serde", "alloy-eip7702/serde"]
 kzg = ["kzg-sidecar", "sha2", "dep:derive_more", "dep:c-kzg", "dep:once_cell"]
