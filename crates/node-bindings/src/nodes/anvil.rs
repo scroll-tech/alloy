@@ -3,6 +3,7 @@
 use alloy_primitives::{hex, Address, ChainId};
 use k256::{ecdsa::SigningKey, SecretKey as K256SecretKey};
 use std::{
+    ffi::OsString,
     io::{BufRead, BufReader},
     net::SocketAddr,
     path::PathBuf,
@@ -10,8 +11,9 @@ use std::{
     str::FromStr,
     time::{Duration, Instant},
 };
-use thiserror::Error;
 use url::Url;
+
+use crate::NodeError;
 
 /// How long we will wait for anvil to indicate that it is ready.
 const ANVIL_STARTUP_TIMEOUT_MILLIS: u64 = 10_000;
@@ -89,42 +91,6 @@ impl Drop for AnvilInstance {
     }
 }
 
-/// Errors that can occur when working with the [`Anvil`].
-#[derive(Debug, Error)]
-pub enum AnvilError {
-    /// Spawning the anvil process failed.
-    #[error("could not start anvil: {0}")]
-    SpawnError(std::io::Error),
-
-    /// Timed out waiting for a message from anvil's stderr.
-    #[error("timed out waiting for anvil to spawn; is anvil installed?")]
-    Timeout,
-
-    /// A line could not be read from the geth stderr.
-    #[error("could not read line from anvil stderr: {0}")]
-    ReadLineError(std::io::Error),
-
-    /// The child anvil process's stderr was not captured.
-    #[error("could not get stderr for anvil child process")]
-    NoStderr,
-
-    /// The private key could not be parsed.
-    #[error("could not parse private key")]
-    ParsePrivateKeyError,
-
-    /// An error occurred while deserializing a private key.
-    #[error("could not deserialize private key from bytes")]
-    DeserializePrivateKeyError,
-
-    /// An error occurred while parsing a hex string.
-    #[error(transparent)]
-    FromHexError(#[from] hex::FromHexError),
-
-    /// No keys available in anvil instance.
-    #[error("no keys available in anvil instance")]
-    NoKeysAvailable,
-}
-
 /// Builder for launching `anvil`.
 ///
 /// # Panics
@@ -158,13 +124,13 @@ pub struct Anvil {
     mnemonic: Option<String>,
     fork: Option<String>,
     fork_block_number: Option<u64>,
-    args: Vec<String>,
+    args: Vec<OsString>,
     timeout: Option<u64>,
 }
 
 impl Anvil {
     /// Creates an empty Anvil builder.
-    /// The default port is 8545. The mnemonic is chosen randomly.
+    /// The default port and the mnemonic are chosen randomly.
     ///
     /// # Example
     ///
@@ -254,7 +220,7 @@ impl Anvil {
     }
 
     /// Adds an argument to pass to the `anvil`.
-    pub fn arg<T: Into<String>>(mut self, arg: T) -> Self {
+    pub fn arg<T: Into<OsString>>(mut self, arg: T) -> Self {
         self.args.push(arg.into());
         self
     }
@@ -263,7 +229,7 @@ impl Anvil {
     pub fn args<I, S>(mut self, args: I) -> Self
     where
         I: IntoIterator<Item = S>,
-        S: Into<String>,
+        S: Into<OsString>,
     {
         for arg in args {
             self = self.arg(arg);
@@ -288,7 +254,7 @@ impl Anvil {
     }
 
     /// Consumes the builder and spawns `anvil`. If spawning fails, returns an error.
-    pub fn try_spawn(self) -> Result<AnvilInstance, AnvilError> {
+    pub fn try_spawn(self) -> Result<AnvilInstance, NodeError> {
         let mut cmd = self.program.as_ref().map_or_else(|| Command::new("anvil"), Command::new);
         cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::inherit());
         let mut port = self.port.unwrap_or_default();
@@ -316,9 +282,9 @@ impl Anvil {
 
         cmd.args(self.args);
 
-        let mut child = cmd.spawn().map_err(AnvilError::SpawnError)?;
+        let mut child = cmd.spawn().map_err(NodeError::SpawnError)?;
 
-        let stdout = child.stdout.take().ok_or(AnvilError::NoStderr)?;
+        let stdout = child.stdout.take().ok_or(NodeError::NoStderr)?;
 
         let start = Instant::now();
         let mut reader = BufReader::new(stdout);
@@ -331,11 +297,11 @@ impl Anvil {
             if start + Duration::from_millis(self.timeout.unwrap_or(ANVIL_STARTUP_TIMEOUT_MILLIS))
                 <= Instant::now()
             {
-                return Err(AnvilError::Timeout);
+                return Err(NodeError::Timeout);
             }
 
             let mut line = String::new();
-            reader.read_line(&mut line).map_err(AnvilError::ReadLineError)?;
+            reader.read_line(&mut line).map_err(NodeError::ReadLineError)?;
             trace!(target: "anvil", line);
             if let Some(addr) = line.strip_prefix("Listening on") {
                 // <Listening on 127.0.0.1:8545>
@@ -352,10 +318,10 @@ impl Anvil {
 
             if is_private_key && line.starts_with('(') {
                 let key_str =
-                    line.split("0x").last().ok_or(AnvilError::ParsePrivateKeyError)?.trim();
-                let key_hex = hex::decode(key_str).map_err(AnvilError::FromHexError)?;
+                    line.split("0x").last().ok_or(NodeError::ParsePrivateKeyError)?.trim();
+                let key_hex = hex::decode(key_str).map_err(NodeError::FromHexError)?;
                 let key = K256SecretKey::from_bytes((&key_hex[..]).into())
-                    .map_err(|_| AnvilError::DeserializePrivateKeyError)?;
+                    .map_err(|_| NodeError::DeserializePrivateKeyError)?;
                 addresses.push(Address::from_public_key(SigningKey::from(&key).verifying_key()));
                 private_keys.push(key);
             }
@@ -379,18 +345,8 @@ impl Anvil {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
-
-    #[test]
-    fn can_launch_anvil() {
-        let _ = Anvil::new().spawn();
-    }
-
-    #[test]
-    fn can_launch_anvil_with_more_accounts() {
-        let _ = Anvil::new().arg("--accounts").arg("20").spawn();
-    }
 
     #[test]
     fn assert_block_time_is_natural_number() {
@@ -398,23 +354,5 @@ mod tests {
         //even though the block time is a f64, it should be passed as a whole number
         let anvil = Anvil::new().block_time(12);
         assert_eq!(anvil.block_time.unwrap().to_string(), "12");
-        let _ = anvil.spawn();
-    }
-
-    #[test]
-    fn can_launch_anvil_with_sub_seconds_block_time() {
-        let _ = Anvil::new().block_time_f64(0.5).spawn();
-    }
-
-    #[test]
-    fn assert_chain_id() {
-        let anvil = Anvil::new().fork("https://eth.llamarpc.com	").spawn();
-        assert_eq!(anvil.chain_id(), 1);
-    }
-
-    #[test]
-    fn assert_chain_id_without_rpc() {
-        let anvil = Anvil::new().spawn();
-        assert_eq!(anvil.chain_id(), 31337);
     }
 }

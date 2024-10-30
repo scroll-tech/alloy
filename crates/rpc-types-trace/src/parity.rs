@@ -429,6 +429,7 @@ pub struct TransactionTrace {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// Output of the trace, can be CALL or CREATE
+    #[serde(default)]
     pub result: Option<TraceOutput>,
     /// How many subtraces this trace has.
     pub subtraces: usize,
@@ -498,15 +499,10 @@ impl Serialize for LocalizedTransactionTrace {
         if let Some(error) = error {
             s.serialize_field("error", error)?;
         }
-
         match result {
-            Some(TraceOutput::Call(call)) => {
-                s.serialize_field("result", call)?;
-            }
-            Some(TraceOutput::Create(create)) => {
-                s.serialize_field("result", create)?;
-            }
-            None => {}
+            Some(TraceOutput::Call(call)) => s.serialize_field("result", call)?,
+            Some(TraceOutput::Create(create)) => s.serialize_field("result", create)?,
+            None => s.serialize_field("result", &None::<()>)?,
         }
 
         s.serialize_field("subtraces", &subtraces)?;
@@ -593,6 +589,7 @@ pub struct StorageDelta {
 mod tests {
     use super::*;
     use serde_json::{json, Value};
+    use similar_asserts::assert_eq;
     use std::str::FromStr;
 
     #[test]
@@ -641,10 +638,10 @@ mod tests {
 
         let json = serde_json::to_value(val.clone()).unwrap();
         let expect = serde_json::from_str::<serde_json::Value>(input).unwrap();
-        similar_asserts::assert_eq!(json, expect);
+        assert_eq!(json, expect);
         let s = serde_json::to_string(&val).unwrap();
         let json = serde_json::from_str::<serde_json::Value>(&s).unwrap();
-        similar_asserts::assert_eq!(json, expect);
+        assert_eq!(json, expect);
 
         let input = input.replace("suicide", "selfdestruct");
         let val = serde_json::from_str::<TransactionTrace>(&input).unwrap();
@@ -793,7 +790,7 @@ mod tests {
         let trace: LocalizedTransactionTrace = serde_json::from_str(reference_data).unwrap();
         assert!(trace.trace.action.is_call());
         let serialized = serde_json::to_string_pretty(&trace).unwrap();
-        similar_asserts::assert_eq!(serialized, reference_data);
+        assert_eq!(serialized, reference_data);
     }
 
     #[test]
@@ -820,8 +817,49 @@ mod tests {
         let trace: LocalizedTransactionTrace = serde_json::from_str(reference_data).unwrap();
         assert!(trace.trace.action.is_selfdestruct());
         let serialized = serde_json::to_string_pretty(&trace).unwrap();
-        similar_asserts::assert_eq!(serialized, reference_data);
+        assert_eq!(serialized, reference_data);
     }
+
+    #[test]
+    fn test_transaction_trace_null_result() {
+        let trace = TransactionTrace {
+            action: Action::Call(CallAction {
+                from: Address::from_str("0x1234567890123456789012345678901234567890").unwrap(),
+                call_type: CallType::Call,
+                gas: 100000,
+                input: Bytes::from_str("0x1234").unwrap(),
+                to: Address::from_str("0x0987654321098765432109876543210987654321").unwrap(),
+                value: U256::from(0),
+            }),
+            ..Default::default()
+        };
+
+        let serialized = serde_json::to_string(&trace).unwrap();
+        let deserialized: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized["result"], serde_json::Value::Null);
+        assert!(deserialized.as_object().unwrap().contains_key("result"));
+        assert!(!deserialized.as_object().unwrap().contains_key("error"));
+
+        let deserialized_trace: TransactionTrace = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized_trace.result, None);
+    }
+
+    #[test]
+    fn test_transaction_trace_error_result() {
+        let trace = TransactionTrace { error: Some("Reverted".to_string()), ..Default::default() };
+
+        let serialized = serde_json::to_string(&trace).unwrap();
+        let deserialized: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized["result"], serde_json::Value::Null);
+        assert!(deserialized.as_object().unwrap().contains_key("result"));
+        assert!(deserialized.as_object().unwrap().contains_key("error"));
+
+        let deserialized_trace: TransactionTrace = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized_trace.result, None);
+    }
+
     #[test]
     fn test_nethermind_trace_result_null_output_value() {
         let reference_data = r#"{
