@@ -165,9 +165,10 @@ tempfile = "3.10"
 tower-http = "0.6.1"
 
 [patch.crates-io]
-alloy-eip2930 = { git = "https://github.com/scroll-tech/alloy-eips", branch = "v0.1.0" }
-alloy-eip7702 = { git = "https://github.com/scroll-tech/alloy-eips", branch = "v0.1.0" }
-alloy-core = { git = "https://github.com/scroll-tech/alloy-core", branch = "v0.8.0"}
-alloy-primitives = { git = "https://github.com/scroll-tech/alloy-core", branch = "v0.8.0"}
+alloy-eip2930 = { git = "https://github.com/scroll-tech/alloy-eips", branch = "v0.3.2" }
+alloy-eip7702 = { git = "https://github.com/scroll-tech/alloy-eips", branch = "v0.3.2" }
+alloy-core = { git = "https://github.com/scroll-tech/alloy-core", branch = "v0.8.10"}
+alloy-primitives = { git = "https://github.com/scroll-tech/alloy-core", branch = "v0.8.10"}
+alloy-sol-types = { git = "https://github.com/scroll-tech/alloy-core", branch = "v0.8.10" }
 
 ruint = { git = "https://github.com/scroll-tech/uint.git", branch = "v1.12.3" }
