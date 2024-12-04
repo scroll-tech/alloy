@@ -22,6 +22,7 @@ use crate::{
         into = "serde_from::TaggedTypedTransaction"
     )
 )]
+#[cfg_attr(all(any(test, feature = "arbitrary"), feature = "k256"), derive(arbitrary::Arbitrary))]
 #[doc(alias = "TypedTx", alias = "TxTyped", alias = "TransactionTyped")]
 pub enum TypedTransaction {
     /// Legacy transaction
@@ -222,6 +223,26 @@ impl Transaction for TypedTransaction {
         }
     }
 
+    fn effective_gas_price(&self, base_fee: Option<u64>) -> u128 {
+        match self {
+            Self::Legacy(tx) => tx.effective_gas_price(base_fee),
+            Self::Eip2930(tx) => tx.effective_gas_price(base_fee),
+            Self::Eip1559(tx) => tx.effective_gas_price(base_fee),
+            Self::Eip4844(tx) => tx.effective_gas_price(base_fee),
+            Self::Eip7702(tx) => tx.effective_gas_price(base_fee),
+        }
+    }
+
+    fn is_dynamic_fee(&self) -> bool {
+        match self {
+            Self::Legacy(tx) => tx.is_dynamic_fee(),
+            Self::Eip2930(tx) => tx.is_dynamic_fee(),
+            Self::Eip1559(tx) => tx.is_dynamic_fee(),
+            Self::Eip4844(tx) => tx.is_dynamic_fee(),
+            Self::Eip7702(tx) => tx.is_dynamic_fee(),
+        }
+    }
+
     fn kind(&self) -> TxKind {
         match self {
             Self::Legacy(tx) => tx.kind(),
@@ -326,7 +347,12 @@ mod serde_from {
     #[serde(untagged)]
     pub(crate) enum MaybeTaggedTypedTransaction {
         Tagged(TaggedTypedTransaction),
-        Untagged(TxLegacy),
+        Untagged {
+            #[serde(default, rename = "type", deserialize_with = "alloy_serde::reject_if_some")]
+            _ty: Option<()>,
+            #[serde(flatten)]
+            tx: TxLegacy,
+        },
     }
 
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -353,7 +379,7 @@ mod serde_from {
         fn from(value: MaybeTaggedTypedTransaction) -> Self {
             match value {
                 MaybeTaggedTypedTransaction::Tagged(tagged) => tagged.into(),
-                MaybeTaggedTypedTransaction::Untagged(tx) => Self::Legacy(tx),
+                MaybeTaggedTypedTransaction::Untagged { tx, .. } => Self::Legacy(tx),
             }
         }
     }
